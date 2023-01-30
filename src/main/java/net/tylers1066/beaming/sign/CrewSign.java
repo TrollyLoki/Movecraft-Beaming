@@ -28,20 +28,43 @@ import org.bukkit.event.block.SignChangeEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 public class CrewSign implements Listener {
 
     private final Map<String, Craft> respawnCrafts = new HashMap<>();
+    private final Map<Craft, Set<String>> crewSigns = new HashMap<>();
 
     private void removeRespawnCraft(@NotNull Craft craft) {
-        respawnCrafts.values().removeIf(c -> c == craft);
+        if (crewSigns.containsKey(craft)) {
+            for (String name : crewSigns.remove(craft))
+                respawnCrafts.remove(name, craft);
+        }
     }
 
-    private void setRespawnCraft(@NotNull String name, @NotNull Craft craft) {
-        respawnCrafts.put(name, craft);
+    private void addRespawnCraft(@NotNull Craft craft, @NotNull Collection<String> names) {
+        removeRespawnCraft(craft); // ensure consistency between respawnCrafts and crewSigns
+
+        Set<String> nameSet = new HashSet<>(names);
+        crewSigns.put(craft, nameSet);
+        for (String name : nameSet)
+            respawnCrafts.put(name, craft);
+    }
+
+    public @Nullable Craft getRespawnCraft(@NotNull String name) {
+        return respawnCrafts.get(name);
+    }
+
+    private void removeRespawnCraft(@NotNull String name) {
+        Craft craft = respawnCrafts.remove(name);
+        if (craft != null)
+            crewSigns.get(craft).remove(name);
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.NORMAL)
@@ -97,9 +120,7 @@ public class CrewSign implements Listener {
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
     public void onPilot(@NotNull CraftPilotEvent event) {
-        for (Map.Entry<String, Location> entry : Utils.getAllCrewSigns(event.getCraft()).entrySet()) {
-            setRespawnCraft(entry.getKey(), event.getCraft());
-        }
+        addRespawnCraft(event.getCraft(), Utils.getAllCrewSigns(event.getCraft()).keySet());
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
@@ -132,7 +153,7 @@ public class CrewSign implements Listener {
             return;
 
         String name = e.getPlayer().getName();
-        Craft craft = respawnCrafts.get(name);
+        Craft craft = getRespawnCraft(name);
         if (craft == null)
             return;
         if (craft instanceof SinkingCraft || craft.getDisabled()) {
@@ -143,7 +164,7 @@ public class CrewSign implements Listener {
 
         Location sign = Utils.getCrewSign(craft, name);
         if (sign == null) { // crew sign was destroyed
-            respawnCrafts.remove(name);
+            removeRespawnCraft(name);
             return;
         }
 
